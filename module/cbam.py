@@ -5,7 +5,7 @@ from project_spectrogram.module.spatial_attention import SpatialAttention
 
 
 class CBAM(nn.Module):
-    def __init__(self, in_planes, ratio=16, kernel_size=7):
+    def __init__(self, in_planes, ratio=8, kernel_size=7):
         super().__init__()
         self.ca = ChannelAttention(in_planes, ratio)
         self.sa = SpatialAttention(kernel_size)

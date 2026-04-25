@@ -1,22 +1,21 @@
 import glob
 import os
 import re
+from typing import Any
 
 import numpy as np
+import torchaudio
+import torchvision
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
-from torchvision.transforms import v2
 
-from project_spectrogram.datasets.agument import RFAugment
-from project_spectrogram.datasets.identity_transform import IdentityTransform
 from project_spectrogram.datasets.spectrogram_dataset import SpectrogramDataset
-from project_spectrogram.datasets.compose import Compose
 
 
 class Preprocessing:
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, data_config: dict[str, Any] | None = None):
         self.root_dir = root_dir
+        self.data_config = data_config or {}
 
     def parse_info(self, path):
         filename = os.path.basename(path)
@@ -31,6 +30,8 @@ class Preprocessing:
 
     def process(self):
         paths = glob.glob(os.path.join(self.root_dir, "**/*.png"), recursive=True)
+        if not paths:
+            raise ValueError(f"No .png files found under: {self.root_dir}")
 
         labels = sorted(list(set(os.path.basename(os.path.dirname(p)) for p in paths)))
         label2idx = {l: i for i, l in enumerate(labels)}
@@ -45,55 +46,78 @@ class Preprocessing:
             groups.append(group_id)
             y.append(label2idx[label])
 
-        gss = GroupShuffleSplit(test_size=0.2, random_state=42)
+        val_split = float(self.data_config.get("val_split", 0.2))
+        split_random_state = int(self.data_config.get("split_random_state", 42))
+        gss = GroupShuffleSplit(test_size=val_split, random_state=split_random_state)
         train_idx, val_idx = next(gss.split(paths, y, groups))
 
         train_paths = [paths[i] for i in train_idx]
         val_paths = [paths[i] for i in val_idx]
 
         # PARSE TOÀN BỘ METADATA TRƯỚC (CHẠY 1 LẦN)
-        def get_all_meta_and_labels(path_list):
-            metas, labels = [], []
+        def get_all_labels(path_list):
+            labels = []
             for p in path_list:
-                label_str, snr, doppler, _ = self.parse_info(p)
-                metas.append([snr, doppler])
+                label_str, _, _, _ = self.parse_info(p)
                 labels.append(label2idx[label_str])
-            return np.array(metas, dtype=np.float32), np.array(labels, dtype=np.int64)
+            return np.array(labels, dtype=np.int64)
 
-        train_meta_raw, train_labels = get_all_meta_and_labels(train_paths)
-        val_meta_raw, val_labels = get_all_meta_and_labels(val_paths)
+        train_labels = get_all_labels(train_paths)
+        val_labels = get_all_labels(val_paths)
 
-        # CHUẨN HÓA OFFLINE
-        scaler = StandardScaler()
-        train_meta_scaled = scaler.fit_transform(train_meta_raw)  # Fit & Transform tập Train
-        val_meta_scaled = scaler.transform(val_meta_raw)  # Chỉ Transform tập Val
 
-        train_tf = Compose([
-            RFAugment(),
-            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-        ])
-        val_tf = Compose([
-            IdentityTransform(),
-            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-        ])
+        normalize_mean = tuple(self.data_config.get("normalize_mean", [0.5, 0.5, 0.5]))
+        normalize_std = tuple(self.data_config.get("normalize_std", [0.5, 0.5, 0.5]))
+        time_mask_param = int(self.data_config.get("time_mask_param", 15))
+        freq_mask_param = int(self.data_config.get("freq_mask_param", 20))
+
+        train_tf = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchaudio.transforms.TimeMasking(time_mask_param=time_mask_param),
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=freq_mask_param),
+                torchvision.transforms.Normalize(normalize_mean, normalize_std),
+            ]
+        )
+        val_tf = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(normalize_mean, normalize_std),
+            ]
+        )
 
         # BƠM DATA TĨNH VÀO DATASET
         train_dataset = SpectrogramDataset(
             train_paths, train_labels,
-            train_meta_scaled, transform=train_tf
+            transform=train_tf
         )
         val_dataset = SpectrogramDataset(
             val_paths, val_labels,
-            val_meta_scaled, transform=val_tf
+            transform=val_tf
         )
 
+        batch_size_train = int(self.data_config.get("batch_size_train", 64))
+        batch_size_val = int(self.data_config.get("batch_size_val", 32))
+        num_workers = int(self.data_config.get("num_workers", 4))
+        pin_memory = bool(self.data_config.get("pin_memory", True))
+        drop_last_train = bool(self.data_config.get("drop_last_train", True))
+        drop_last_val = bool(self.data_config.get("drop_last_val", False))
+
         train_loader = DataLoader(
-            train_dataset, batch_size=64, shuffle=True,
-            num_workers=4, pin_memory=True, drop_last=True
+            train_dataset,
+            batch_size=batch_size_train,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            drop_last=drop_last_train,
         )
         val_loader = DataLoader(
-            val_dataset, batch_size=32, shuffle=False,
-            num_workers=4, pin_memory=True, drop_last=False
+            val_dataset,
+            batch_size=batch_size_val,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            drop_last=drop_last_val,
         )
 
         return train_loader, val_loader, labels
