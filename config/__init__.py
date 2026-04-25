@@ -7,7 +7,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _resolve_project_path(value: str) -> str:
+def _resolve_project_path(value: str | Path) -> str:
     path = Path(value)
     if path.is_absolute():
         return str(path)
@@ -37,8 +37,13 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     output_dir_value = paths.get("output_dir", "output")
     paths["output_dir"] = _resolve_project_path(output_dir_value)
 
-    if "train_root_dir" in paths:
-        paths["train_root_dir"] = _resolve_project_path(paths["train_root_dir"])
+    train_root_dir_value = paths.get("train_root_dir")
+    if train_root_dir_value is None:
+        paths["train_root_dir"] = None
+    elif isinstance(train_root_dir_value, (str, Path)):
+        paths["train_root_dir"] = _resolve_project_path(train_root_dir_value)
+    else:
+        raise ValueError("paths.train_root_dir must be a path string or null.")
 
     paths["train_log_path"] = _resolve_project_path(
         paths.get("train_log_path", str(Path(output_dir_value) / "train_log.csv"))

@@ -78,7 +78,8 @@ Hiện tại file đang dùng JSON-style (vẫn hợp lệ vì loader đọc JSO
 ```json
 {
   "paths": {
-    "train_root_dir": "D:/.../radarcommunsignaldata2026train/versions/1",
+    "train_root_dir": null,
+    "kaggle_dataset_id": "huynhthethien/radarcommunsignaldata2026train",
     "output_dir": "output",
     "model_output_path": "output/TrainedModel.pt",
     "train_log_path": "output/train_log.csv"
@@ -105,6 +106,9 @@ Hiện tại file đang dùng JSON-style (vẫn hợp lệ vì loader đọc JSO
 Ghi chú:
 - Path tương đối sẽ được resolve theo root dự án.
 - Thư mục output sẽ tự tạo nếu chưa tồn tại.
+- Nếu chạy trên Kaggle Notebook:
+  - Ưu tiên attach dataset vào notebook và set `KAGGLE_TRAIN_DATASET_DIR=/kaggle/input/<dataset-slug>`.
+  - Nếu không set biến môi trường, code sẽ thử `paths.kaggle_dataset_id`.
 
 ## 5. Cách chạy train
 
@@ -114,6 +118,14 @@ Chạy từ thư mục cha `D:\deep_learning` để import `project_spectrogram.
 cd D:\deep_learning
 .\venv\Scripts\activate
 python -m project_spectrogram.main
+```
+
+Chạy trên Kaggle Notebook:
+
+```python
+import os
+os.environ["KAGGLE_TRAIN_DATASET_DIR"] = "/kaggle/input/radarcommunsignaldata2026train"
+!python -m project_spectrogram.main
 ```
 
 ## 6. Kết quả đầu ra

@@ -1,6 +1,7 @@
 {
   "paths": {
-    "train_root_dir": "/kaggle/input/datasets/huynhthethien/radarcommunsignaldata2026train",
+    "train_root_dir": null,
+    "kaggle_dataset_id": "huynhthethien/radarcommunsignaldata2026train",
     "output_dir": "output",
     "model_output_path": "output/TrainedModel.pt",
     "train_log_path": "output/train_log.csv"
